@@ -2,6 +2,12 @@
 name = "tp2"
 version = "0.1.0"
 edition = "2024"
+default-run = "tp2"
 
 [dependencies]
 santiago = "1.3.1"
+svg_fmt = "0.4.5"
+
+[[bin]]
+name = "test_svg"
+path = "src/bin/test_svg.rs"
