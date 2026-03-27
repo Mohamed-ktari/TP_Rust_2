@@ -5,6 +5,7 @@ use santiago::grammar::Grammar;
 use std::f64::consts::PI;
 use std::io::Write;
 
+
 // Structure de l'Arbre de Syntaxe Abstraite (AST) étendue
 #[derive(Debug, Clone)]
 pub enum AST {
@@ -112,73 +113,71 @@ impl Logo {
     }
 
     // INTERPRÉTEUR 
-    // exécute les commandes et affiche les étapes 
-    pub fn interpret(&mut self, ast: &AST) {
+    pub fn interpret(&mut self, ast: &AST, depth: usize) {
+        // Indentation simple avec des espaces
+        let indent = "  ".repeat(depth);
+
         match ast {
             AST::Program(command, next_program) => {
-                self.interpret(command);
-                self.interpret(next_program);
+                self.interpret(command, depth);
+                self.interpret(next_program, depth);
             }
             AST::Empty => {}
             AST::Action(order_node, number_node) => {
                 let val = if let AST::Number(v) = **number_node { v as f64 } else { 0.0 };
                 if let AST::Order(direction) = &**order_node {
                     let rad = self.angle * PI / 180.0;
+                    
                     match **direction {
-                        AST::Forward => {
-                            let new_x = self.x + val * rad.cos();
-                            let new_y = self.y + val * rad.sin();
-                            let mode = if self.pen_down { "(Stylo BAS)" } else { "(Stylo HAUT)" };
-                            println!("Avancer de {}: ({:.1}, {:.1}) -> ({:.1}, {:.1}) {}", val, self.x, self.y, new_x, new_y, mode);
+                        AST::Forward | AST::Backward => {
+                            let is_forward = matches!(**direction, AST::Forward);
+                            let sign = if is_forward { 1.0 } else { -1.0 };
+                            let new_x = self.x + (val * sign) * rad.cos();
+                            let new_y = self.y + (val * sign) * rad.sin();
+                            
+                            let pen_state = if self.pen_down { "DRAW" } else { "MOVE" };
+                            
+                            println!("{}[{}] {} {:.0} units -> pos: ({:.2}, {:.2})", 
+                                indent, pen_state, if is_forward {"FORWARD"} else {"BACKWARD"}, val, new_x, new_y);
+                            
                             self.x = new_x;
                             self.y = new_y;
                         }
-                        AST::Backward => {
-                            let new_x = self.x - val * rad.cos();
-                            let new_y = self.y - val * rad.sin();
-                            let mode = if self.pen_down { "(Stylo BAS)" } else { "(Stylo HAUT)" };
-                            println!("Reculer de {}: ({:.1}, {:.1}) -> ({:.1}, {:.1}) {}", val, self.x, self.y, new_x, new_y, mode);
-                            self.x = new_x;
-                            self.y = new_y;
-                        }
-                        AST::Left => {
-                            self.angle -= val;
-                            println!("Tourner à gauche de {}° (Nouvel angle: {}°)", val, self.angle);
-                        }
-                        AST::Right => {
-                            self.angle += val;
-                            println!("Tourner à droite de {}° (Nouvel angle: {}°)", val, self.angle);
+                        AST::Left | AST::Right => {
+                            let is_right = matches!(**direction, AST::Right);
+                            if is_right { self.angle += val; } else { self.angle -= val; }
+                            
+                            println!("{}ROTATE {} BY {:.0} DEG (ANGLE: {:.0})", 
+                                indent, if is_right {"RIGHT"} else {"LEFT"}, val, self.angle);
                         }
                         _ => {}
                     }
                 }
             }
             AST::Repeat(n, body) => {
-                println!("--- Début Boucle REPEAT {} fois ---", n);
-                for i in 1..=*n {
-                    println!("Itération {}/{}", i, n);
-                    self.interpret(body);
+                println!("{}REPEAT {} [", indent, n);
+                for _ in 0..*n {
+                    self.interpret(body, depth + 1);
                 }
-                println!("--- Fin de Boucle ---");
+                println!("{}]", indent);
             }
             AST::Block(inner_program) => {
-                self.interpret(inner_program);
+                self.interpret(inner_program, depth);
             }
             AST::PenUp => {
                 self.pen_down = false;
-                println!("Action : Lever le stylo");
+                println!("{}PEN UP", indent);
             }
             AST::PenDown => {
                 self.pen_down = true;
-                println!("Action : Baisser le stylo");
+                println!("{}PEN DOWN", indent);
             }
             _ => {}
         }
     }
 
-    // LE COMPILATEUR SVG 
+    // COMPILATEUR SVG 
     pub fn compile(&mut self, ast: &AST) -> String {
-        // (La logique de compile reste la même que précédemment pour générer le SVG)
         self.compile_recursive(ast);
         
         format!(
@@ -226,8 +225,9 @@ impl Logo {
 }
 
 fn main() -> std::io::Result<()> {
-    // Programme de test 
-    let input = "penup forward 50 pendown repeat 4 [ forward 100 right 90 ]";
+    // COMMANDE POUR ÉTOILE 
+    
+    let input = "repeat 5 [ forward 150 right 144 ]";
     
     let lex_rules = lexer_rules();
     let lexemes = santiago::lexer::lex(&lex_rules, input).unwrap();
@@ -235,19 +235,18 @@ fn main() -> std::io::Result<()> {
     let parse_trees = &santiago::parser::parse(&grammar, &lexemes).expect("syntax error")[0];
     let ast = parse_trees.as_abstract_syntax_tree();
     
-    // MODE INTERPRÉTEUR
-    println!("=== DÉBUT DE L'INTERPRÉTATION ===");
+    // MODE INTERPRÉTEUR 
+    println!("=== SIMULATION DE L'ÉTOILE ===");
     let mut interpreter = Logo::new();
-    interpreter.interpret(&ast);
+    interpreter.interpret(&ast, 0);
     
-    // MODE COMPILATEUR
-    println!("\n=== DÉBUT DE LA COMPILATION SVG ===");
+    // MODE COMPILATEUR 
     let mut compiler = Logo::new();
     let code_svg = compiler.compile(&ast);
     
-    let mut file = std::fs::File::create("logo_final.svg")?;
+    let mut file = std::fs::File::create("etoile.svg")?;
     file.write_all(code_svg.as_bytes())?;
     
-    println!("Fichier 'logo_final.svg' généré.");
+    println!("\nFichier SVG 'etoile.svg' généré avec succès.");
     Ok(())
 }

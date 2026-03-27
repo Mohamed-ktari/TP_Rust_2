@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <path d="M 200 200 L 350 200" style="stroke:rgb(255,0,0);stroke-width:1" />
+  <path d="M 350 200 L 228.64745 288.1678" style="stroke:rgb(255,0,0);stroke-width:1" />
+  <path d="M 228.64745 288.1678 L 275 145.50931" style="stroke:rgb(255,0,0);stroke-width:1" />
+  <path d="M 275 145.50931 L 321.35254 288.1678" style="stroke:rgb(255,0,0);stroke-width:1" />
+  <path d="M 321.35254 288.1678 L 200 200" style="stroke:rgb(255,0,0);stroke-width:1" />
+ 
+</svg>
