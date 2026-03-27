@@ -236,7 +236,7 @@ fn compile_and_run(source: &str) {
     println!("Position finale : ({:.1}, {:.1})", turtle.x, turtle.y);
 }
 
-fn main() {
+pub fn main() {
     
     compile_and_run("forward 100 right 90 forward 100 right 90 forward 100 right 90 forward 100 right 90");
 
