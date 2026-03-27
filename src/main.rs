@@ -1,250 +1,161 @@
-// ─────────────────────────────────────────────
-//  1. TOKENS  (sortie du Lexer)
-// ─────────────────────────────────────────────
+use santiago::grammar::Grammar;
+use santiago::lexer::LexerRules;
 
-#[derive(Debug, PartialEq, Clone)]
-enum Token {
-    Order(String), 
-    Number(u32), 
+
+#[derive(Debug, Clone)]
+pub enum AST {
+    Program(Box<AST>, Box<AST>), 
+    Command(Box<AST>, Box<AST>), 
+    Order(Direction),
+    Number(i32),
+    Empty,
 }
 
-// ─────────────────────────────────────────────
-//  2. AST  (Arbre de Syntaxe Abstraite)
-// ─────────────────────────────────────────────
-
-
-#[derive(Debug)]
-struct Command {
-    order: String,
-    value: u32,
+#[derive(Debug, Clone)]
+pub enum Direction {
+    Forward,
+    Backward,
+    Left,
+    Right,
 }
 
-type Program = Vec<Command>;
-
-// ─────────────────────────────────────────────
-//  3. LEXER  (analyse lexicale)
-// ─────────────────────────────────────────────
-
-fn lex(source: &str) -> Result<Vec<Token>, String> {
-    let mut tokens = Vec::new();
-
-    for word in source.split_whitespace() {
-        let token = match word {
-            "forward" | "backward" | "left" | "right" => {
-                Token::Order(word.to_string())
-            }
-            _ => {
-                match word.parse::<u32>() {
-                    Ok(n) => Token::Number(n),
-                    Err(_) => {
-                        return Err(format!("Lexer error: mot inconnu '{}'", word));
-                    }
-                }
-            }
-        };
-        tokens.push(token);
-    }
-
-    Ok(tokens)
-}
-
-// ─────────────────────────────────────────────
-//  4. PARSER  (analyse syntaxique)
-// ─────────────────────────────────────────────
-
-struct Parser {
-    tokens: Vec<Token>,
-    cursor: usize,
-}
-
-impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, cursor: 0 }
-    }
-
-    /// Renvoie le token courant sans avancer.
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.cursor)
-    }
-
-    /// Consomme et retourne le token courant.
-    fn advance(&mut self) -> Option<Token> {
-        if self.cursor < self.tokens.len() {
-            let tok = self.tokens[self.cursor].clone();
-            self.cursor += 1;
-            Some(tok)
-        } else {
-            None
-        }
-    }
-
-    // ── règle : <program> ──────────────────────────────────
-    fn parse_program(&mut self) -> Result<Program, String> {
-        let mut commands = Vec::new();
+fn lexer_rules() -> LexerRules {
+    santiago::lexer_rules!(
 
         
-        while self.peek().is_some() {
-            let cmd = self.parse_command()?;
-            commands.push(cmd);
+
+        "DEFAULT" | "FORWARD"  = string "forward";
+        "DEFAULT" | "BACKWARD" = string "backward";
+        "DEFAULT" | "LEFT"     = string "left";
+        "DEFAULT" | "RIGHT"    = string "right";
+
+       
+
+        "DEFAULT" | "NUMBER" = pattern r"[0-9]+";
+
+
+        "DEFAULT" | "WS" = pattern r"\s+" => |lexer| lexer.skip();
+    )
+}
+
+fn grammar() -> Grammar<AST> {
+    santiago::grammar!(
+        
+        "program" => rules "command" "program" => |nodes : Vec<AST>| AST::Program(
+            Box::new(nodes[0].clone()),
+            Box::new(nodes[1].clone())
+        );
+        
+        
+        "program" => empty => |_| AST::Empty;
+ 
+        "command" => rules "order" "number" => |nodes| AST::Command(
+            Box::new(nodes[0].clone()),
+            Box::new(nodes[1].clone())
+        );
+ 
+        "order" => rules "forward"  => |n| n[0].clone();
+        "order" => rules "backward" => |n| n[0].clone();
+        "order" => rules "left"     => |n| n[0].clone();
+        "order" => rules "right"    => |n| n[0].clone();
+ 
+        "forward"  => lexemes "FORWARD"  => |_| AST::Order(Direction::Forward);
+        "backward" => lexemes "BACKWARD" => |_| AST::Order(Direction::Backward);
+        "left"     => lexemes "LEFT"     => |_| AST::Order(Direction::Left);
+        "right"    => lexemes "RIGHT"    => |_| AST::Order(Direction::Right);
+        
+        // Extraction de la valeur numérique
+        "number"   => lexemes "NUMBER"  => |lexemes| {
+            let val = lexemes[0].raw.parse::<i32>().unwrap_or(0);
+            AST::Number(val)
+        };
+    )
+}
+
+fn eval(ast: &AST) {
+    match ast {
+        AST::Program(cmd, next) => {
+            eval(cmd);
+            eval(next);
         }
-
-        Ok(commands)
-    }
-
-    // ── règle : <command> ::= <order> <number> ────────────
-    fn parse_command(&mut self) -> Result<Command, String> {
-        let order = self.parse_order()?;
-        let value = self.parse_number()?;
-        Ok(Command { order, value })
-    }
-
-    // ── règle : <order> ───────────────────────────────────
-    fn parse_order(&mut self) -> Result<String, String> {
-        match self.advance() {
-            Some(Token::Order(o)) => Ok(o),
-            Some(other) => Err(format!(
-                "Parser error: ordre attendu, trouvé {:?}",
-                other
-            )),
-            None => Err("Parser error: ordre attendu, fin de fichier".to_string()),
+        AST::Command(order, number) => {
+            let n = if let AST::Number(val) = **number { val } else { 0 };
+            match **order {
+                AST::Order(Direction::Forward)  => println!("Avance de {} unités", n),
+                AST::Order(Direction::Backward) => println!("Recule de {} unités", n),
+                AST::Order(Direction::Left)     => println!("Tourne à gauche de {} degrés", n),
+                AST::Order(Direction::Right)    => println!("Tourne à droite de {} degrés", n),
+                _ => {}
+            }
         }
-    }
-
-    // ── règle : <number> ::= [0-9]+ ───────────────────────
-    fn parse_number(&mut self) -> Result<u32, String> {
-        match self.advance() {
-            Some(Token::Number(n)) => Ok(n),
-            Some(other) => Err(format!(
-                "Parser error: nombre attendu, trouvé {:?}",
-                other
-            )),
-            None => Err("Parser error: nombre attendu, fin de fichier".to_string()),
-        }
+        AST::Empty => {} // Fin du programme, on ne fait rien
+        _ => {}
     }
 }
 
-// ─────────────────────────────────────────────
-//  5. INTERPRÉTEUR  (exécution de l'AST)
-// ─────────────────────────────────────────────
-
-/// État de la tortue Logo.
-struct Turtle {
-    x: f64,
-    y: f64,
-    angle: f64,
-    pen_down: bool,
-}
-
-impl Turtle {
-    fn new() -> Self {
-        Turtle {
-            x: 0.0,
-            y: 0.0,
-            angle: 0.0,
-            pen_down: true,
-        }
-    }
-
-    /// Exécute une liste de commandes et affiche les mouvements.
-    fn run(&mut self, program: &Program) {
-        for cmd in program {
-            self.execute(cmd);
-        }
-    }
-
-    fn execute(&mut self, cmd: &Command) {
-        match cmd.order.as_str() {
-            "forward" => {
-                let dist = cmd.value as f64;
-                let rad = self.angle.to_radians();
-                let nx = self.x + dist * rad.sin();
-                let ny = self.y + dist * rad.cos();
-                if self.pen_down {
-                    println!(
-                        "  Tracé : ({:.1}, {:.1}) → ({:.1}, {:.1})",
-                        self.x, self.y, nx, ny
-                    );
-                }
-                self.x = nx;
-                self.y = ny;
+fn run(label: &str, input: &str) {
+    println!("\n╔══════════════════════════════════════════════════╗");
+    println!("║  {}", label);
+    println!("╚══════════════════════════════════════════════════╝");
+    println!("Source : {:?}\n", input);
+ 
+    
+    let rules = lexer_rules();
+    let lexemes = match santiago::lexer::lex(&rules, input) {
+        Ok(l) => {
+            println!("── Lexèmes ({} tokens) ──────────────────────────", l.len());
+            for lex in &l {
+                println!(
+                    "   {:<10}  {:<10}  @ ligne {}, col {}",
+                    lex.kind, lex.raw, lex.position.line, lex.position.column
+                );
             }
-            "backward" => {
-                let dist = cmd.value as f64;
-                let rad = self.angle.to_radians();
-                let nx = self.x - dist * rad.sin();
-                let ny = self.y - dist * rad.cos();
-                if self.pen_down {
-                    println!(
-                        "  Tracé : ({:.1}, {:.1}) → ({:.1}, {:.1})",
-                        self.x, self.y, nx, ny
-                    );
-                }
-                self.x = nx;
-                self.y = ny;
-            }
-            "left" => {
-                self.angle -= cmd.value as f64;
-                println!("  Rotation gauche : {}° (angle = {}°)", cmd.value, self.angle);
-            }
-            "right" => {
-                self.angle += cmd.value as f64;
-                println!("  Rotation droite : {}° (angle = {}°)", cmd.value, self.angle);
-            }
-            _ => eprintln!("Interpréteur : ordre inconnu '{}'", cmd.order),
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-//  6. POINT D'ENTRÉE
-// ─────────────────────────────────────────────
-
-fn compile_and_run(source: &str) {
-    println!("═══════════════════════════════════════");
-    println!("Source : {}", source);
-    println!("───────────────────────────────────────");
-
-    // Étape 1 : Lexer
-    let tokens = match lex(source) {
-        Ok(t) => {
-            println!("Tokens : {:?}", t);
-            t
+            l
         }
         Err(e) => {
-            eprintln!("Erreur lexicale : {}", e);
+            println!("✗ Erreur lexicale : {}", e);
             return;
         }
     };
-
-    // Étape 2 : Parser
-    let mut parser = Parser::new(tokens);
-    let ast = match parser.parse_program() {
-        Ok(a) => {
-            println!("AST    : {:?}", a);
-            a
+ 
+    // ── Étape 2 : Analyse syntaxique ────────────────────────
+    println!("\n── Arbre syntaxique (parse tree) ────────────────");
+    let grammar = grammar();
+    // ... dans la fonction run ...
+    match santiago::parser::parse(&grammar, &lexemes) {
+        Ok(parse_trees) => {
+            let ast = parse_trees[0].as_abstract_syntax_tree();
+            println!("── AST ──────────────────────────────────────────");
+            println!("{:?}", ast);
+            
+            println!("\n── Exécution (Interpréteur) ─────────────────────");
+            eval(&ast);
+            println!("\n✓ Programme exécuté avec succès.");
         }
-        Err(e) => {
-            eprintln!("Erreur syntaxique : {}", e);
-            return;
-        }
-    };
-
-    // Étape 3 : Interpréteur
-    println!("Exécution :");
-    let mut turtle = Turtle::new();
-    turtle.run(&ast);
-    println!("Position finale : ({:.1}, {:.1})", turtle.x, turtle.y);
+        Err(e) => println!("✗ Erreur syntaxique : {}", e),
+    }
 }
 
 fn main() {
-    // Programme Logo qui dessine un carré (version sans repeat)
-    // repeat 4 [forward 100 right 90]  ← hors grammaire simplifiée
-    // On l'encode manuellement :
-    compile_and_run("forward 100 right 90 forward 100 right 90 forward 100 right 90 forward 100 right 90");
-
-    // Test d'erreur lexicale
-    compile_and_run("forward 50 jump 10");
-
-    // Test d'erreur syntaxique (nombre manquant)
-    compile_and_run("forward");
+    // ── Test 1 : commande simple ─────────────────────────────
+    run("Test 1 — commande simple", "forward 100");
+ 
+    // ── Test 2 : carré complet (8 commandes) ─────────────────
+    run(
+        "Test 2 — carré (4 × right+forward)",
+        "forward 100 right 90 forward 100 right 90 \
+         forward 100 right 90 forward 100 right 90",
+    );
+ 
+    // ── Test 3 : programme vide ───────────────────────────────
+    run("Test 3 — programme vide", "");
+ 
+    // ── Test 4 : erreur lexicale (mot inconnu) ────────────────
+    run("Test 4 — erreur lexicale", "forward 50 jump 10");
+ 
+    // ── Test 5 : erreur syntaxique (nombre manquant) ──────────
+    run("Test 5 — erreur syntaxique (nombre manquant)", "forward");
+ 
+    // ── Test 6 : erreur syntaxique (ordre manquant) ───────────
+    run("Test 6 — erreur syntaxique (deux nombres)", "100 forward");
 }
