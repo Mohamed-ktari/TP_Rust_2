@@ -5,7 +5,6 @@ use santiago::grammar::Grammar;
 use std::f64::consts::PI;
 use std::io::Write;
 
-
 // Structure de l'Arbre de Syntaxe Abstraite (AST) étendue
 #[derive(Debug, Clone)]
 pub enum AST {
@@ -86,8 +85,7 @@ fn grammar() -> Grammar<AST> {
     )
 }
 
-// Génération du fichier SVG (Compilateur)
-// Structure représentant l'état de la tortue
+// Structure Logo (Compilateur + Interpréteur)
 pub struct Logo {
     pub x: f64,
     pub y: f64,
@@ -113,13 +111,90 @@ impl Logo {
         }
     }
 
-    pub fn compile(&mut self, ast: &AST) -> String {
+    // INTERPRÉTEUR 
+    // exécute les commandes et affiche les étapes 
+    pub fn interpret(&mut self, ast: &AST) {
         match ast {
             AST::Program(command, next_program) => {
-                self.compile(command);
-                self.compile(next_program);
+                self.interpret(command);
+                self.interpret(next_program);
             }
-            AST::Empty => {} // On ne fait plus rien ici pour éviter les balises en double
+            AST::Empty => {}
+            AST::Action(order_node, number_node) => {
+                let val = if let AST::Number(v) = **number_node { v as f64 } else { 0.0 };
+                if let AST::Order(direction) = &**order_node {
+                    let rad = self.angle * PI / 180.0;
+                    match **direction {
+                        AST::Forward => {
+                            let new_x = self.x + val * rad.cos();
+                            let new_y = self.y + val * rad.sin();
+                            let mode = if self.pen_down { "(Stylo BAS)" } else { "(Stylo HAUT)" };
+                            println!("Avancer de {}: ({:.1}, {:.1}) -> ({:.1}, {:.1}) {}", val, self.x, self.y, new_x, new_y, mode);
+                            self.x = new_x;
+                            self.y = new_y;
+                        }
+                        AST::Backward => {
+                            let new_x = self.x - val * rad.cos();
+                            let new_y = self.y - val * rad.sin();
+                            let mode = if self.pen_down { "(Stylo BAS)" } else { "(Stylo HAUT)" };
+                            println!("Reculer de {}: ({:.1}, {:.1}) -> ({:.1}, {:.1}) {}", val, self.x, self.y, new_x, new_y, mode);
+                            self.x = new_x;
+                            self.y = new_y;
+                        }
+                        AST::Left => {
+                            self.angle -= val;
+                            println!("Tourner à gauche de {}° (Nouvel angle: {}°)", val, self.angle);
+                        }
+                        AST::Right => {
+                            self.angle += val;
+                            println!("Tourner à droite de {}° (Nouvel angle: {}°)", val, self.angle);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            AST::Repeat(n, body) => {
+                println!("--- Début Boucle REPEAT {} fois ---", n);
+                for i in 1..=*n {
+                    println!("Itération {}/{}", i, n);
+                    self.interpret(body);
+                }
+                println!("--- Fin de Boucle ---");
+            }
+            AST::Block(inner_program) => {
+                self.interpret(inner_program);
+            }
+            AST::PenUp => {
+                self.pen_down = false;
+                println!("Action : Lever le stylo");
+            }
+            AST::PenDown => {
+                self.pen_down = true;
+                println!("Action : Baisser le stylo");
+            }
+            _ => {}
+        }
+    }
+
+    // LE COMPILATEUR SVG 
+    pub fn compile(&mut self, ast: &AST) -> String {
+        // (La logique de compile reste la même que précédemment pour générer le SVG)
+        self.compile_recursive(ast);
+        
+        format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n{}\n{} \n{}",
+            svg_fmt::BeginSvg { w: 400.0, h: 400.0 },
+            self.svg_content,
+            svg_fmt::EndSvg
+        )
+    }
+
+    fn compile_recursive(&mut self, ast: &AST) {
+        match ast {
+            AST::Program(command, next_program) => {
+                self.compile_recursive(command);
+                self.compile_recursive(next_program);
+            }
             AST::Action(order_node, number_node) => {
                 let val = if let AST::Number(v) = **number_node { v as f64 } else { 0.0 };
                 if let AST::Order(direction) = &**order_node {
@@ -131,7 +206,6 @@ impl Logo {
                         AST::Right => { self.angle += val; (self.x, self.y) },
                         _ => (self.x, self.y),
                     };
-
                     if self.pen_down && (new_x != self.x || new_y != self.y) {
                         let line = svg_fmt::line_segment(self.x as f32, self.y as f32, new_x as f32, new_y as f32).color(svg_fmt::red());
                         self.svg_content.push_str(&format!("  {}\n", line));
@@ -141,49 +215,39 @@ impl Logo {
                 }
             }
             AST::Repeat(n, body) => {
-                for _ in 0..*n {
-                    self.compile(body);
-                }
+                for _ in 0..*n { self.compile_recursive(body); }
             }
-            AST::Block(inner_program) => {
-                self.compile(inner_program);
-            }
-            AST::PenUp => {
-                self.pen_down = false;
-            }
-            AST::PenDown => {
-                self.pen_down = true;
-            }
+            AST::Block(inner_program) => { self.compile_recursive(inner_program); }
+            AST::PenUp => { self.pen_down = false; }
+            AST::PenDown => { self.pen_down = true; }
             _ => {}
         }
-        
-        // entoure le contenu avec les balises SVG une seule fois
-        format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n{}\n{} \n{}",
-            svg_fmt::BeginSvg { w: 400.0, h: 400.0 },
-            self.svg_content,
-            svg_fmt::EndSvg
-        )
     }
 }
 
 fn main() -> std::io::Result<()> {
-    // Cercle dessiné avec une boucle repeat pour vérifier la solidité
-    let input = "repeat 36 [ forward 10 right 10 ]";
+    // Programme de test 
+    let input = "penup forward 50 pendown repeat 4 [ forward 100 right 90 ]";
     
     let lex_rules = lexer_rules();
     let lexemes = santiago::lexer::lex(&lex_rules, input).unwrap();
-    
     let grammar = grammar();
     let parse_trees = &santiago::parser::parse(&grammar, &lexemes).expect("syntax error")[0];
     let ast = parse_trees.as_abstract_syntax_tree();
     
-    let mut compilateur = Logo::new();
-    let code_svg_final = compilateur.compile(&ast);
+    // MODE INTERPRÉTEUR
+    println!("=== DÉBUT DE L'INTERPRÉTATION ===");
+    let mut interpreter = Logo::new();
+    interpreter.interpret(&ast);
     
-    let mut file = std::fs::File::create("carre_boucle.svg")?;
-    file.write_all(code_svg_final.as_bytes())?;
+    // MODE COMPILATEUR
+    println!("\n=== DÉBUT DE LA COMPILATION SVG ===");
+    let mut compiler = Logo::new();
+    let code_svg = compiler.compile(&ast);
     
-    println!("Compilation terminée ! Le fichier 'carre_boucle.svg' a été généré.");
+    let mut file = std::fs::File::create("logo_final.svg")?;
+    file.write_all(code_svg.as_bytes())?;
+    
+    println!("Fichier 'logo_final.svg' généré.");
     Ok(())
 }
