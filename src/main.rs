@@ -223,7 +223,7 @@ impl Logo {
         }
     }
 }
-
+/* 
 fn main() -> std::io::Result<()> {
     // COMMANDE POUR ÉTOILE 
     
@@ -248,5 +248,52 @@ fn main() -> std::io::Result<()> {
     file.write_all(code_svg.as_bytes())?;
     
     println!("\nFichier SVG 'etoile.svg' généré avec succès.");
+    Ok(())
+}*/
+fn main() -> std::io::Result<()> {
+    // Demander la saisie à l'utilisateur
+    println!("--- CONSOLE LOGO ---");
+    print!("Tapez votre commande (ex: repeat 5 [ forward 100 right 144 ]) : ");
+    
+    std::io::stdout().flush()?; 
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    
+    let input = input.trim();
+
+    if input.is_empty() {
+        println!("Aucune commande entrée.");
+        return Ok(());
+    }
+
+    // Analyse (Lexer + Parser)
+    let lex_rules = lexer_rules();
+    let lexemes = santiago::lexer::lex(&lex_rules, input).unwrap();
+    let grammar = grammar();
+    
+    let parse_result = santiago::parser::parse(&grammar, &lexemes);
+    
+    match parse_result {
+        Ok(trees) => {
+            let ast = trees[0].as_abstract_syntax_tree();
+
+            // Interpréteur
+            println!("\n=== EXÉCUTION EN COURS ===");
+            let mut interpreter = Logo::new();
+            interpreter.interpret(&ast, 0);
+
+            // Génération du fichier (Compilateur)
+            let mut compiler = Logo::new();
+            let code_svg = compiler.compile(&ast);
+            
+            let mut file = std::fs::File::create("mon_dessin.svg")?;
+            file.write_all(code_svg.as_bytes())?;
+            
+            println!("\n[Succès] Fichier 'mon_dessin.svg' généré.");
+        },
+        Err(_) => println!("\n[Erreur] Syntaxe Logo invalide. Vérifiez vos crochets et vos commandes."),
+    }
+
     Ok(())
 }
