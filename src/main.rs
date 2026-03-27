@@ -1,11 +1,12 @@
 // TP2 - Compilateur et Interpréteur Logo
 
-use santiago::lexer::{LexerRules, Lexeme};
+//use santiago::lexer::{LexerRules, Lexeme};
+use santiago::lexer::LexerRules;
 use santiago::grammar::Grammar;
-use std::f64::consts::PI;
-use std::fs::File;
+//use std::f64::consts::PI;
+//use std::fs::File;
 use std::io::Write;
-use svg_fmt::*;
+//use svg_fmt::*;
 
 // Structure de l'Arbre de Syntaxe Abstraite (AST)
 
@@ -69,6 +70,12 @@ pub struct Logo {
     pub angle: f64,
     pub pen_down: bool,
     pub svg_content: String,
+}
+
+impl Default for Logo {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Logo {
